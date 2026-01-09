@@ -20,10 +20,12 @@ class ODataClient:
         base_url: str,
         state_repo: Optional[Checkpointable] = None,
         timeout: int = 30,
+        skip_request_errors: bool = True,
     ):
         self.base_url = base_url
         self.state_repo = state_repo
         self.timeout = timeout
+        self.skip_request_errors = skip_request_errors
 
     @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=4, max=10))
     def _get_page(self, url: str) -> dict[str, Any]:
@@ -35,10 +37,16 @@ class ODataClient:
                 response.raise_for_status()
                 return response.json()
         except httpx.HTTPStatusError as e:
-            log.error(f"HTTP error occurred: {e.response.status_code} - {e.response.text}")
+            status_code = e.response.status_code
+            if status_code == 404:
+                log.warning(f"Skipping 404 for URL: {url}")
+                return {"value": []}
+            log.error(f"HTTP error occurred: {status_code} - {e.response.text}")
             raise
         except httpx.RequestError as e:
-            log.error(f"An error occurred while requesting data: {e}")
+            if self.skip_request_errors:
+                log.warning(f"Skipping request error for URL: {url} ({e})")
+                return {"value": []}
             raise
 
     def get_all_data(

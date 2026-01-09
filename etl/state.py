@@ -4,6 +4,7 @@ import logging
 from datetime import datetime
 from typing import Any, Optional
 
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy import inspect
 from etl.models import Base, EtlState
 
@@ -24,7 +25,16 @@ class EtlStateRepository:
             state_obj = EtlState(process_name=process_name)
             self.session.add(state_obj)
         state_obj.checkpoint_state = state
-        self.session.commit()
+        try:
+            self.session.commit()
+        except IntegrityError:
+            # Handle concurrent inserts for the same process_name.
+            self.session.rollback()
+            state_obj = self.get_state(process_name)
+            if not state_obj:
+                raise
+            state_obj.checkpoint_state = state
+            self.session.commit()
 
     def set_last_successful_run_at(self, process_name: str, run_at: datetime):
         """Updates the last successful run timestamp."""
@@ -33,7 +43,16 @@ class EtlStateRepository:
             state_obj = EtlState(process_name=process_name)
             self.session.add(state_obj)
         state_obj.last_successful_run_at = run_at
-        self.session.commit()
+        try:
+            self.session.commit()
+        except IntegrityError:
+            # Handle concurrent inserts for the same process_name.
+            self.session.rollback()
+            state_obj = self.get_state(process_name)
+            if not state_obj:
+                raise
+            state_obj.last_successful_run_at = run_at
+            self.session.commit()
 
     @staticmethod
     def ensure_etl_state_table_exists(engine):

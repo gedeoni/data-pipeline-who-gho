@@ -18,6 +18,7 @@ class ETLConfig:
     """Main configuration for the ETL pipeline."""
     who_odata: WHOODataConfig
     dev_run_limit: int | None = None
+    skip_request_errors: bool = True
 
     @classmethod
     def from_airflow_variables(cls) -> ETLConfig:
@@ -29,13 +30,16 @@ class ETLConfig:
         who_base_url = Variable.get("who_gho_base_url", default_var="https://ghoapi.azureedge.net/api")
         # Default to an empty string. An empty list signals that all indicators should be used.
         indicator_codes_str = Variable.get("who_gho_indicator_codes", default_var="")
+        skip_request_errors_raw = Variable.get("who_gho_skip_request_errors", default_var="true")
+        skip_request_errors = skip_request_errors_raw.strip().lower() in {"1", "true", "yes", "y"}
 
         return cls(
             who_odata=WHOODataConfig(
                 base_url=who_base_url,
                 # Filter out empty strings that can result from an empty default_var
                 indicator_codes=[code for code in indicator_codes_str.split(",") if code],
-            )
+            ),
+            skip_request_errors=skip_request_errors,
         )
 
     @classmethod
@@ -45,7 +49,6 @@ class ETLConfig:
             who_odata=WHOODataConfig(
                 base_url="https://ghoapi.azureedge.net/api",
                 indicator_codes=["WHOSIS_000001", "LIFE_EXPECTANCY_0"],
-            )
+            ),
+            skip_request_errors=True,
         )
-    
-    

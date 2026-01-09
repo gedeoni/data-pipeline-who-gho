@@ -24,11 +24,11 @@ class DimCountry(Base):
 class FactObservation(Base):
     __tablename__ = "fact_observation"
 
-    observation_id = Column(String, primary_key=True)
+    observation_id = Column(Integer, primary_key=True)
     indicator_code = Column(String, ForeignKey("dim_indicator.indicator_code"), nullable=False)
     spatial_dim = Column(String, ForeignKey("dim_country.country_code"), nullable=False)
     spatial_dim_type = Column(String, nullable=False)
-    time_dim = Column(String, nullable=False)
+    time_dim = Column(Integer, nullable=False)
     time_dim_type = Column(String, nullable=False)
     numeric_value = Column(Float, nullable=True)
     value = Column(String, nullable=True)

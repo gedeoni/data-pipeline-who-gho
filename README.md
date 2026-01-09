@@ -72,6 +72,16 @@ Go to **Admin -> Connections** and add a new connection:
 - **Password**: `analytics`
 - **Port**: `5432`
 
+This connection is required for the DAG to run. If it is missing, the `extract_data` task will fail with a `conn_id 'postgres_analytics' isn't defined` error.
+
+docker compose exec airflow-webserver airflow connections add postgres_analytics \
+    --conn-type postgres \
+    --conn-host postgres_analytics \
+    --conn-schema analytics \
+    --conn-login analytics \
+    --conn-password analytics \
+    --conn-port 5432
+
 #### c. Create Airflow Variables
 
 Go to **Admin -> Variables** and add the following variables:
@@ -79,7 +89,16 @@ Go to **Admin -> Variables** and add the following variables:
 - **key**: `who_gho_base_url`
   - **val**: `https://ghoapi.azureedge.net/api`
 - **key**: `who_gho_indicator_codes`
-  - **val**: `WHOSIS_000001,LIFE_EXPECTANCY_0` (Example indicators; each indicator is fetched per country)
+  - **val**: `WHOSIS_000001,LIFE_EXPECTANCY_0` (Example indicators; each indicator is fetched per country. You can leave it as empty if you want all the indicators to be fetched)
+- **key**: `who_gho_skip_request_errors`
+  - **val**: `true` (Optional; when `true`, transient HTTP/network errors are skipped and the extract continues)
+
+#### d. Configure Email on Failure (Optional)
+
+The DAG can send emails on task failure. To enable it:
+
+- Configure SMTP in Airflow (`airflow.cfg` or environment variables).
+- Update the recipient list in `dags/who_gho_etl_dag.py` if needed.
 
 ## How to Run the DAG
 
@@ -88,6 +107,22 @@ Go to **Admin -> Variables** and add the following variables:
 3. To trigger a manual run, click the "Play" button on the right side. You can optionally specify parameters for the run:
     - `dev_run_limit`: For a quick test run, set this to a small number (e.g., 1000) to limit the number of observation records fetched.
     - `full_reingest`: Set to `true` to ignore any saved watermarks and re-ingest all data from the beginning.
+
+### Trigger the DAG via Docker Compose (CLI)
+
+You can also trigger the DAG without the UI:
+
+```bash
+docker compose exec airflow-webserver airflow dags unpause who_gho_etl
+docker compose exec airflow-webserver airflow dags trigger who_gho_etl
+```
+
+With parameters:
+
+```bash
+docker compose exec airflow-webserver airflow dags trigger who_gho_etl \
+  --conf '{"dev_run_limit": 1000, "full_reingest": false}'
+```
 
 ## Database Schema
 
@@ -131,7 +166,7 @@ WHERE
 To run the unit tests, execute the following command from the project root:
 
 ```bash
-python -m pytest
+./venv/bin/python -m pytest
 ```
 
 ## Local Development and Debugging
@@ -151,3 +186,16 @@ export ANALYTICS_DB_CONN_STR="postgresql://analytics:analytics@localhost:5433/an
 python etl/local_run.py --limit 1000
 ```
 This will run the ETL for a limited number of records, printing detailed logs to the console.
+
+## Superset: Connect to Analytics DB
+
+To explore the loaded data in Superset:
+
+1. Open Superset at `http://localhost:8088` and log in.
+2. Go to **Settings -> Database Connections -> + Database**.
+3. Use this SQLAlchemy URI:
+```
+postgresql+psycopg2://analytics:analytics@postgres_analytics:5432/analytics
+```
+
+4. Save and test the connection.

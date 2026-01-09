@@ -8,7 +8,10 @@ x-airflow-common: &airflow-common
     AIRFLOW__CELERY__BROKER_URL: redis://airflow-redis:6379/0
     AIRFLOW__CELERY__RESULT_BACKEND: db+postgresql://airflow:airflow@postgres_airflow/airflow
     AIRFLOW__SCHEDULER__STANDALONE_DAG_PROCESSOR: "true"
+    AIRFLOW__SCHEDULER__LOCAL_TASK_JOB_HEARTBEAT_SEC: "5"
+    AIRFLOW__SCHEDULER__SCHEDULER_ZOMBIE_TASK_THRESHOLD: "1800"
     AIRFLOW_UID: 50000
+    PYTHONPATH: /opt/airflow
   volumes:
     - ./dags:/opt/airflow/dags
     - ./etl:/opt/airflow/etl
@@ -69,27 +72,16 @@ services:
       retries: 5
     restart: always
 
-  airflow-init:
+  airflow-webserver:
     <<: *airflow-common
-    container_name: airflow_init
+    container_name: airflow_webserver
     entrypoint: /bin/bash
     command:
       - -c
       - |
-        pip install --no-cache-dir -r /opt/airflow/requirements.txt
         airflow db migrate
-        airflow users create --username admin --password admin --firstname Anonymous --lastname User --role Admin --email admin@example.org
-    depends_on:
-      postgres_airflow:
-        condition: service_healthy
-      airflow-redis:
-        condition: service_healthy
-    restart: "no"
-
-  airflow-webserver:
-    <<: *airflow-common
-    container_name: airflow_webserver
-    command: airflow webserver
+        airflow users create --username admin --password admin --firstname Anonymous --lastname User --role Admin --email admin@example.org || true
+        exec airflow webserver
     ports:
       - "8080:8080"
     healthcheck:
@@ -97,55 +89,73 @@ services:
       interval: 30s
       timeout: 30s
       retries: 3
-    depends_on:
-      - airflow-init
     restart: always
 
   airflow-scheduler:
     <<: *airflow-common
     container_name: airflow_scheduler
-    command: airflow scheduler
+    entrypoint: /bin/bash
+    command:
+      - -c
+      - |
+        airflow db migrate
+        airflow users create --username admin --password admin --firstname Anonymous --lastname User --role Admin --email admin@example.org || true
+        exec airflow scheduler
     healthcheck:
       test: ["CMD-SHELL", "airflow jobs check --job-type SchedulerJob --hostname \"$${HOSTNAME}\""]
       interval: 30s
       timeout: 30s
       retries: 5
-    depends_on:
-      - airflow-init
     restart: always
 
   airflow-worker:
     <<: *airflow-common
     container_name: airflow_worker
-    command: airflow celery worker
-    depends_on:
-      - airflow-init
+    entrypoint: /bin/bash
+    command:
+      - -c
+      - |
+        airflow db migrate
+        airflow users create --username admin --password admin --firstname Anonymous --lastname User --role Admin --email admin@example.org || true
+        exec airflow celery worker
     restart: always
 
   airflow-triggerer:
     <<: *airflow-common
     container_name: airflow_triggerer
-    command: airflow triggerer
-    depends_on:
-      - airflow-init
+    entrypoint: /bin/bash
+    command:
+      - -c
+      - |
+        airflow db migrate
+        airflow users create --username admin --password admin --firstname Anonymous --lastname User --role Admin --email admin@example.org || true
+        exec airflow triggerer
     restart: always
 
   airflow-dag-processor:
     <<: *airflow-common
     container_name: airflow_dag_processor
-    command: airflow dag-processor
-    depends_on:
-      - airflow-init
+    entrypoint: /bin/bash
+    command:
+      - -c
+      - |
+        airflow db migrate
+        airflow users create --username admin --password admin --firstname Anonymous --lastname User --role Admin --email admin@example.org || true
+        exec airflow dag-processor
     restart: always
 
   airflow-flower:
     <<: *airflow-common
     container_name: airflow_flower
-    command: airflow celery flower
+    entrypoint: /bin/bash
+    command:
+      - -c
+      - |
+        airflow db migrate
+        airflow users create --username admin --password admin --firstname Anonymous --lastname User --role Admin --email admin@example.org || true
+        exec airflow celery flower
     ports:
       - "5555:5555"
-    depends_on:
-      - airflow-init
     restart: always
 
   superset-db:
@@ -177,6 +187,7 @@ services:
   superset:
     image: apache/superset:latest
     container_name: superset
+    user: "0:0"
     ports:
       - "8088:8088"
     environment:
@@ -192,10 +203,13 @@ services:
       - /bin/bash
       - -c
       - |
-        superset db upgrade
-        superset fab create-admin --username ${SUPERSET_ADMIN_USERNAME:-admin} --firstname Superset --lastname Admin --email ${SUPERSET_ADMIN_EMAIL:-admin@superset.com} --password ${SUPERSET_ADMIN_PASSWORD:-admin} || true
-        superset init
-        superset run -h 0.0.0.0 -p 8088
+        chown -R superset:superset /app/.venv
+        /app/.venv/bin/python -m ensurepip --upgrade
+        /app/.venv/bin/python -m pip install --no-cache-dir psycopg2-binary
+        su superset -c "/app/.venv/bin/superset db upgrade"
+        su superset -c "/app/.venv/bin/superset fab create-admin --username ${SUPERSET_ADMIN_USERNAME:-admin} --firstname Superset --lastname Admin --email ${SUPERSET_ADMIN_EMAIL:-admin@superset.com} --password ${SUPERSET_ADMIN_PASSWORD:-admin}" || true
+        su superset -c "/app/.venv/bin/superset init"
+        exec su superset -c "/app/.venv/bin/superset run -h 0.0.0.0 -p 8088"
     depends_on:
       superset-db:
         condition: service_healthy

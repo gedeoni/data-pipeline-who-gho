@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 import logging
-from datetime import datetime
+from dataclasses import asdict, replace
+from datetime import datetime, timedelta
 import json
 import os
 
@@ -12,12 +13,12 @@ from airflow.models.param import Param
 from airflow.providers.postgres.hooks.postgres import PostgresHook
 from airflow.operators.python import get_current_context
 
-from etl.config import ETLConfig
+from etl.config import ETLConfig, WHOODataConfig
 from etl.extract import ODataClient, fetch_observations
 from etl.transform import transform_observations, transform_indicators, transform_countries, save_validated_data
 from etl.validate import validate_dataframe, Observation, Indicator, Country
 from etl.load import get_db_engine, create_schema, bulk_upsert, save_rejected_records
-from etl.state import EtlStateRepository, ensure_etl_state_table_exists
+from etl.state import EtlStateRepository
 
 log = logging.getLogger(__name__)
 
@@ -31,6 +32,11 @@ def get_analytics_engine():
     start_date=datetime(2023, 1, 1),
     schedule_interval="@daily",
     catchup=False,
+    max_active_runs=1,
+    default_args={
+        "email_on_failure": True,
+        "email": ["your_email@example.com"],  # Configure in airflow.cfg
+    },
     params={
         "dev_run_limit": Param(None, type=["null", "integer"], description="Limit the number of records for a development run."),
         "full_reingest": Param(False, type="boolean", description="If true, ignores watermarks and re-ingests all data."),
@@ -39,8 +45,6 @@ def get_analytics_engine():
     ### WHO GHO ETL Pipeline
     This DAG extracts data from the WHO GHO OData API, transforms it, and loads it into a PostgreSQL database.
     """,
-    email_on_failure=True,
-    email=['your_email@example.com'], # Configure in airflow.cfg
 )
 def who_gho_etl_dag():
 
@@ -51,11 +55,11 @@ def who_gho_etl_dag():
         params = context["params"]
 
         config = ETLConfig.from_airflow_variables()
-        config.dev_run_limit = params.get("dev_run_limit")
+        config = replace(config, dev_run_limit=params.get("dev_run_limit"))
 
-        return config.__dict__
+        return asdict(config)
 
-    @task
+    @task(retries=3, retry_delay=timedelta(minutes=5), execution_timeout=timedelta(hours=12))
     def extract_data(config: dict) -> dict[str, str]:
         """
         Extracts data from the WHO GHO API and saves it to local files.
@@ -65,16 +69,23 @@ def who_gho_etl_dag():
         data_dir = f"/opt/airflow/data/{run_id}"
         os.makedirs(data_dir, exist_ok=True)
 
-        etl_config = ETLConfig(**config)
+        etl_config = ETLConfig(
+            who_odata=WHOODataConfig(**config["who_odata"]),
+            dev_run_limit=config.get("dev_run_limit"),
+        )
         engine = get_analytics_engine()
-        ensure_etl_state_table_exists(engine)
+        EtlStateRepository.ensure_etl_state_table_exists(engine)
 
         from sqlalchemy.orm import sessionmaker
         Session = sessionmaker(bind=engine)
         session = Session()
         state_repo = EtlStateRepository(session)
 
-        client = ODataClient(etl_config.who_odata.base_url, state_repo=state_repo)
+        client = ODataClient(
+            etl_config.who_odata.base_url,
+            state_repo=state_repo,
+            skip_request_errors=etl_config.skip_request_errors,
+        )
 
         output_paths = {}
 
@@ -173,7 +184,7 @@ def who_gho_etl_dag():
         # Load Observations
         with open(file_paths["validated_observations"]) as f:
             observations = json.load(f)
-        bulk_upsert(engine, "fact_observation", observations, "id")
+        bulk_upsert(engine, "fact_observation", observations, "observation_id")
 
     @task
     def data_quality_checks():
@@ -187,7 +198,9 @@ def who_gho_etl_dag():
             log.info(f"Data quality check passed: fact_observation has {result} rows.")
 
             # Check 2: No nulls in key columns
-            result = connection.execute("SELECT COUNT(*) FROM fact_observation WHERE indicator_code IS NULL OR country_code IS NULL OR year IS NULL").scalar()
+            result = connection.execute(
+                "SELECT COUNT(*) FROM fact_observation WHERE indicator_code IS NULL OR spatial_dim IS NULL OR time_dim IS NULL"
+            ).scalar()
             if result > 0:
                 raise ValueError("Data quality check failed: fact_observation has nulls in key columns.")
             log.info("Data quality check passed: fact_observation has no nulls in key columns.")
