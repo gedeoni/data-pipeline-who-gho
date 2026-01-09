@@ -197,5 +197,10 @@ To explore the loaded data in Superset:
 ```
 postgresql+psycopg2://analytics:analytics@postgres_analytics:5432/analytics
 ```
-
 4. Save and test the connection.
+
+## Visualization Example
+
+Below is a sample visualization generated in Superset, illustrating life expectancy trends for five countries over time.
+
+![Life Expectancy Trends](image.png)
