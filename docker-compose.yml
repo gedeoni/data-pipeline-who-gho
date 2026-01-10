@@ -160,13 +160,13 @@ services:
 
   superset-db:
     image: postgres:15
-    container_name: superset_db
+    container_name: supersetdb
     environment:
       POSTGRES_USER: superset
       POSTGRES_PASSWORD: superset
       POSTGRES_DB: superset
     volumes:
-      - superset_db:/var/lib/postgresql/data
+      - supersetdb:/var/lib/postgresql/data
     healthcheck:
       test: ["CMD", "pg_isready", "-U", "superset"]
       interval: 10s
@@ -176,7 +176,7 @@ services:
 
   superset-redis:
     image: redis:7
-    container_name: superset_redis
+    container_name: supersetredis
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 10s
@@ -186,7 +186,7 @@ services:
 
   superset:
     image: apache/superset:latest
-    container_name: superset
+    container_name: superset1
     user: "0:0"
     ports:
       - "8088:8088"
@@ -220,5 +220,5 @@ services:
 volumes:
   postgres_airflow_data:
   postgres_analytics_data:
-  superset_db:
+  supersetdb:
   superset_home:

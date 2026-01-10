@@ -1,29 +1,24 @@
 from __future__ import annotations
 from typing import Optional, Generic, TypeVar, List
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, ConfigDict
 import pandas as pd
 
 class Indicator(BaseModel):
     """Represents a WHO GHO indicator."""
+    model_config = ConfigDict(populate_by_name=True, coerce_numbers_to_str=True)
     indicator_code: str = Field(..., alias="IndicatorCode")
     indicator_name: str = Field(..., alias="IndicatorName")
     language: str = Field(..., alias="Language")
 
-    class Config:
-        populate_by_name = True
-        coerce_numbers_to_str = True
-
 class Country(BaseModel):
     """Represents a country."""
+    model_config = ConfigDict(populate_by_name=True, coerce_numbers_to_str=True)
     country_code: str = Field(..., alias="Code")
     country_name: str = Field(..., alias="Title")
 
-    class Config:
-        populate_by_name = True
-        coerce_numbers_to_str = True
-
 class Observation(BaseModel):
     """Represents a single observation fact."""
+    model_config = ConfigDict(populate_by_name=True, coerce_numbers_to_str=True)
     observation_id: str = Field(..., alias="Id")
     indicator_code: str = Field(..., alias="IndicatorCode")
     spatial_dim: str = Field(..., alias="SpatialDim")
@@ -40,11 +35,6 @@ class Observation(BaseModel):
         if isinstance(v, str) and '-' in v:
             return v.split('-')[0]
         return v
-
-    class Config:
-        populate_by_name = True
-        coerce_numbers_to_str = True
-
 
 class RejectedRecord(BaseModel):
     """Represents a record that failed validation."""

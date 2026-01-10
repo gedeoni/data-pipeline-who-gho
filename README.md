@@ -74,13 +74,7 @@ Go to **Admin -> Connections** and add a new connection:
 
 This connection is required for the DAG to run. If it is missing, the `extract_data` task will fail with a `conn_id 'postgres_analytics' isn't defined` error.
 
-docker compose exec airflow-webserver airflow connections add postgres_analytics \
-    --conn-type postgres \
-    --conn-host postgres_analytics \
-    --conn-schema analytics \
-    --conn-login analytics \
-    --conn-password analytics \
-    --conn-port 5432
+docker-compose exec airflow-webserver airflow connections add postgres_analytics --conn-type postgres --conn-host postgres_analytics --conn-schema analytics --conn-login analytics --conn-password analytics --conn-port 5432
 
 #### c. Create Airflow Variables
 
@@ -92,6 +86,8 @@ Go to **Admin -> Variables** and add the following variables:
   - **val**: `WHOSIS_000001,LIFE_EXPECTANCY_0` (Example indicators; each indicator is fetched per country. You can leave it as empty if you want all the indicators to be fetched)
 - **key**: `who_gho_skip_request_errors`
   - **val**: `true` (Optional; when `true`, transient HTTP/network errors are skipped and the extract continues)
+
+  docker-compose exec airflow-webserver /bin/bash -c "airflow variables set who_gho_base_url 'https://ghoapi.azureedge.net/api' && airflow variables set who_gho_indicator_codes 'WHOSIS_000001,LIFE_EXPECTANCY_0' && airflow variables set who_gho_skip_request_errors 'true'"
 
 #### d. Configure Email on Failure (Optional)
 
@@ -120,8 +116,11 @@ docker compose exec airflow-webserver airflow dags trigger who_gho_etl
 With parameters:
 
 ```bash
-docker compose exec airflow-webserver airflow dags trigger who_gho_etl \
-  --conf '{"dev_run_limit": 1000, "full_reingest": false}'
+docker-compose exec airflow-webserver airflow dags trigger who_gho_etl --conf '{"dev_run_limit": 1000, "full_reingest": false}'
+```
+
+```powershel
+docker-compose exec airflow-webserver airflow dags trigger who_gho_etl --conf '{\"dev_run_limit\": 1000,\"full_reingest\": false}'
 ```
 
 ## Database Schema
@@ -134,6 +133,7 @@ The ETL process loads data into a star-schema-like model in the `analytics` data
 - `etl_state`: A utility table to manage the state of the ETL process for incremental loads and resumability.
 - `rejected_records`: Stores records that failed validation, along with the error details.
 
+*check data:  docker-compose exec postgres_analytics psql -U analytics -d analytics 
 ### Example Analytics Queries
 
 ```sql
@@ -180,8 +180,15 @@ The `etl/local_run.py` script allows you to run the ETL process locally without 
 export ANALYTICS_DB_CONN_STR="postgresql://analytics:analytics@localhost:5433/analytics"
 ```
 
-3. Run the script:
+```powershell
+  $env:ANALYTICS_DB_CONN_STR = "postgresql://analytics:analytics@localhost:5433/analytics"
+```
 
+3. Run the script: 
+  * create a virtual env: python3 -m venv venv
+  * activate venv: source venv/bin/activate (mac); venv\Scripts\activate (Windows)
+  * install requirements: pip install -r requirements.txt
+  * run local script: python etl/local_run.py --limit 1000
 ```bash
 python etl/local_run.py --limit 1000
 ```
